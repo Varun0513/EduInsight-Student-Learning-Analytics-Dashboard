@@ -502,7 +502,38 @@
             socioeconomic features</p>
     </footer>
 
+    <!-- ═══════════ CHAT ASSISTANT ═══════════ -->
+    <div id="chat-panel" class="chat-panel" style="display:none">
+        <div class="chat-header">
+            <span class="chat-header-icon">✨</span>
+            <div>
+                <div class="chat-header-title">AI Teaching Assistant</div>
+                <div class="chat-header-sub">Ask anything about your students</div>
+            </div>
+            <button class="chat-close-btn" id="chat-close-btn" title="Close">✕</button>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="chat-bubble ai">
+                <span class="chat-bubble-icon">🤖</span>
+                <div class="chat-bubble-text">Hi! I'm your AI teaching assistant. I have access to your full dashboard
+                    data — ask me anything about your students, risks, or teaching strategies.</div>
+            </div>
+        </div>
+        <div class="chat-input-row">
+            <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask about your students…"></textarea>
+            <button id="chat-send-btn" class="chat-send-btn" title="Send">➤</button>
+        </div>
+    </div>
+
+    <!-- Floating chat button -->
+    <button id="chat-fab" class="chat-fab" title="AI Teaching Assistant">
+        <span class="chat-fab-icon">💬</span>
+        <span class="chat-fab-label">AI Assistant</span>
+    </button>
+
     <script src="data.js"></script>
+    <script src="config.js"></script>
+    <script src="gemini.js"></script>
     <script src="app.js"></script>
 </body>
 

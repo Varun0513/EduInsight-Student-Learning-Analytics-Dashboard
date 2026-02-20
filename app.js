@@ -860,7 +860,7 @@ document.getElementById('add-student-form').addEventListener('submit', (e) => {
     document.getElementById('pred-pop-hours-val').textContent = student.Hours_Studied + 'h';
     document.getElementById('pred-pop-motiv-val').textContent = student.Motivation_Level;
 
-    // Teaching strategies — inject/refresh section into the card
+    // ── Teaching strategies section ──────────────────────────────────────────
     let stratSection = document.getElementById('pred-pop-strategy-section');
     if (!stratSection) {
         stratSection = document.createElement('div');
@@ -868,22 +868,69 @@ document.getElementById('add-student-form').addEventListener('submit', (e) => {
         stratSection.className = 'pred-pop-strategies-wrap';
         popup.querySelector('.pred-popup-card').appendChild(stratSection);
     }
-    stratSection.innerHTML = `
-        <div class="pred-pop-label" style="margin-bottom:0.7rem">📋 Teaching Strategies</div>
-        <div class="pred-pop-strategies">
-            ${(predictedPersona.strategies || []).map((s, i) => `
-                <div class="pred-pop-tip">
-                    <div class="pred-pop-tip-num">${i + 1}</div>
-                    <div class="pred-pop-tip-text">${s}</div>
-                </div>
-            `).join('')}
-        </div>
-    `;
+
+    // Helper to render numbered tips
+    const renderTips = (tips, isAI = false) => {
+        const badge = isAI ? '<span class="ai-badge">✨ AI</span>' : '';
+        stratSection.innerHTML = `
+            <div class="pred-pop-label" style="margin-bottom:0.7rem">
+                📋 Teaching Strategies ${badge}
+            </div>
+            <div class="pred-pop-strategies">
+                ${tips.map((s, i) => `
+                    <div class="pred-pop-tip">
+                        <div class="pred-pop-tip-num">${i + 1}</div>
+                        <div class="pred-pop-tip-text">${s}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    };
+
+    // Show static strategies first (instant feedback)
+    renderTips(predictedPersona.strategies || []);
+
+    // Try to enhance with AI-personalized advice (async, non-blocking)
+    const hasApiKey = window.GEMINI_API_KEY && window.GEMINI_API_KEY !== 'YOUR_API_KEY_HERE';
+    if (hasApiKey) {
+        // Show loading state
+        stratSection.innerHTML = `
+            <div class="pred-pop-label" style="margin-bottom:0.7rem">📋 Teaching Strategies <span class="ai-badge">✨ AI</span></div>
+            <div class="ai-loading">
+                <div class="ai-spinner"></div>
+                <span>Generating personalised advice…</span>
+            </div>
+        `;
+        const aiPrompt = `You are an expert educational advisor. A student has been classified as "${predictedPersona.name}" with:
+- Exam Score: ${student.Exam_Score}/100
+- Attendance: ${student.Attendance}%
+- Study Hours: ${student.Hours_Studied}h/week
+- Risk Level: ${risk_label} (score ${risk_score}/10)
+- Motivation: ${student.Motivation_Level}
+
+Provide exactly 4 concise, practical teaching strategies specifically tailored to this student's exact profile. 
+Format: return ONLY a JSON array of 4 strings, no markdown, no extra text. Example: ["Strategy 1","Strategy 2","Strategy 3","Strategy 4"]`;
+
+        callGemini(aiPrompt).then(text => {
+            try {
+                const match = text.match(/\[[\s\S]*\]/);
+                const tips = match ? JSON.parse(match[0]) : null;
+                if (Array.isArray(tips) && tips.length > 0) {
+                    renderTips(tips, true);
+                } else {
+                    renderTips(predictedPersona.strategies || [], false);
+                }
+            } catch {
+                renderTips(predictedPersona.strategies || [], false);
+            }
+        }).catch(() => {
+            renderTips(predictedPersona.strategies || [], false);
+        });
+    }
 
     // Close add-student modal and show popup
     addModal.style.display = 'none';
     popup.style.display = 'flex';
-    // Animate in
     requestAnimationFrame(() => popup.querySelector('.pred-popup-card').classList.add('visible'));
 });
 
@@ -1148,3 +1195,124 @@ document.addEventListener('DOMContentLoaded', () => {
     renderPersonas();
     renderAll();
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE 3 — AI CHAT ASSISTANT
+// ═══════════════════════════════════════════════════════════════════════════════
+(function initChatAssistant() {
+    const fab = document.getElementById('chat-fab');
+    const panel = document.getElementById('chat-panel');
+    const closeBtn = document.getElementById('chat-close-btn');
+    const messages = document.getElementById('chat-messages');
+    const input = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('chat-send-btn');
+
+    let chatHistory = [];   // Gemini conversation history
+    let isTyping = false;
+
+    // ── Toggle panel ──────────────────────────────────────────────────────────
+    fab.addEventListener('click', () => {
+        const open = panel.style.display !== 'none';
+        panel.style.display = open ? 'none' : 'flex';
+        if (!open) {
+            panel.classList.add('visible');
+            input.focus();
+        }
+    });
+    closeBtn.addEventListener('click', () => {
+        panel.classList.remove('visible');
+        setTimeout(() => panel.style.display = 'none', 250);
+    });
+
+    // ── Append message bubble ─────────────────────────────────────────────────
+    function appendBubble(role, text) {
+        const div = document.createElement('div');
+        div.className = `chat-bubble ${role}`;
+        if (role === 'ai') {
+            div.innerHTML = `<span class="chat-bubble-icon">🤖</span><div class="chat-bubble-text">${text}</div>`;
+        } else {
+            div.innerHTML = `<div class="chat-bubble-text">${text}</div>`;
+        }
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+        return div;
+    }
+
+    // ── Typing indicator ──────────────────────────────────────────────────────
+    function showTyping() {
+        const div = document.createElement('div');
+        div.className = 'chat-bubble ai typing-indicator';
+        div.id = 'chat-typing';
+        div.innerHTML = `<span class="chat-bubble-icon">🤖</span>
+            <div class="chat-bubble-text">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </div>`;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+    function hideTyping() {
+        const t = document.getElementById('chat-typing');
+        if (t) t.remove();
+    }
+
+    // ── Send a message ────────────────────────────────────────────────────────
+    async function sendMessage() {
+        const text = input.value.trim();
+        if (!text || isTyping) return;
+
+        // Check API key
+        const hasKey = window.GEMINI_API_KEY && window.GEMINI_API_KEY !== 'YOUR_API_KEY_HERE';
+        if (!hasKey) {
+            appendBubble('ai', '⚠️ Please add your Gemini API key to <code>config.js</code> to use the AI Assistant.');
+            return;
+        }
+
+        isTyping = true;
+        input.value = '';
+        input.style.height = 'auto';
+        sendBtn.disabled = true;
+
+        appendBubble('user', text);
+        showTyping();
+
+        try {
+            // First message includes system context; subsequent keep history
+            const systemCtx = buildDashboardContext();
+            const prompt = chatHistory.length === 0
+                ? `${systemCtx}\n\nTeacher's question: ${text}`
+                : text;
+
+            const response = await callGemini(prompt, chatHistory);
+
+            // Update history for next turn
+            chatHistory.push({ role: 'user', parts: [{ text: chatHistory.length === 0 ? `${systemCtx}\n\nTeacher's question: ${text}` : text }] });
+            chatHistory.push({ role: 'model', parts: [{ text: response }] });
+
+            hideTyping();
+            // Convert markdown-ish asterisks to <strong> for display
+            const formatted = response
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+            appendBubble('ai', formatted);
+        } catch (err) {
+            hideTyping();
+            appendBubble('ai', `⚠️ ${err.message || 'Something went wrong. Please try again.'}`);
+        }
+
+        isTyping = false;
+        sendBtn.disabled = false;
+        input.focus();
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    // Auto-resize textarea
+    input.addEventListener('input', () => {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+})();
