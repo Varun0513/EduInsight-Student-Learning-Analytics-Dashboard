@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EduInsight — Student Learning Analytics</title>
+  <meta name="description" content="A data-driven learning patterns and classroom strategy insights dashboard for educators."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="index.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ HEADER ═══════════════════════════════ -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <span class="brand-icon">🎓</span>
+      <div>
+        <h1 class="brand-title">EduInsight</h1>
+        <p class="brand-sub">Learning Patterns & Classroom Intelligence</p>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label for="filter-school">School Type</label>
+        <select id="filter-school">
+          <option value="All">All Schools</option>
+          <option value="Public">Public</option>
+          <option value="Private">Private</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="filter-gender">Gender</label>
+        <select id="filter-gender">
+          <option value="All">All Genders</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="filter-motiv">Motivation</label>
+        <select id="filter-motiv">
+          <option value="All">All Levels</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+      </div>
+      <div class="student-count-badge" id="student-count">6,607 students</div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════ HERO KPI ═══════════════════════════════ -->
+<main class="main-content">
+
+  <section class="hero-band">
+    <div class="hero-gradient"></div>
+    <div class="kpi-grid" id="kpi-grid">
+      <div class="kpi-card" id="kpi-total">
+        <div class="kpi-icon">👥</div>
+        <div class="kpi-value" id="kv-total">—</div>
+        <div class="kpi-label">Total Students</div>
+      </div>
+      <div class="kpi-card" id="kpi-score">
+        <div class="kpi-icon">📊</div>
+        <div class="kpi-value" id="kv-score">—</div>
+        <div class="kpi-label">Avg Exam Score</div>
+      </div>
+      <div class="kpi-card" id="kpi-attend">
+        <div class="kpi-icon">📅</div>
+        <div class="kpi-value" id="kv-attend">—</div>
+        <div class="kpi-label">Avg Attendance</div>
+      </div>
+      <div class="kpi-card highlight-red" id="kpi-risk">
+        <div class="kpi-icon">⚠️</div>
+        <div class="kpi-value" id="kv-risk">—</div>
+        <div class="kpi-label">High-Risk Students</div>
+      </div>
+      <div class="kpi-card" id="kpi-hours">
+        <div class="kpi-icon">⏳</div>
+        <div class="kpi-value" id="kv-hours">—</div>
+        <div class="kpi-label">Avg Study Hours</div>
+      </div>
+      <div class="kpi-card highlight-purple" id="kpi-cluster">
+        <div class="kpi-icon">🏆</div>
+        <div class="kpi-value" id="kv-cluster">—</div>
+        <div class="kpi-label">Largest Persona</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ LEARNER PERSONAS ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">🧠 Learner Personas</h2>
+      <p class="section-desc">Students are grouped into 5 distinct learning behavior clusters via K-Means analysis. Click a persona to reveal targeted teaching strategies.</p>
+    </div>
+    <div class="persona-grid" id="persona-grid">
+      <!-- Filled by JS -->
+    </div>
+  </section>
+
+  <!-- ═══════════ STRATEGY RECOMMENDER ═══════════ -->
+  <section class="section" id="strategy-section" style="display:none">
+    <div class="strategy-panel" id="strategy-panel">
+      <div class="strategy-header" id="strategy-header">
+        <span id="strategy-icon"></span>
+        <div>
+          <h3 id="strategy-title">Teaching Strategies</h3>
+          <p id="strategy-subtitle"></p>
+        </div>
+        <button class="close-btn" id="close-strategy">✕</button>
+      </div>
+      <div class="strategy-tips" id="strategy-tips">
+        <!-- filled by JS -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ RISK RADAR ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">⚠️ Risk Radar — Disengagement Early Warning</h2>
+      <p class="section-desc">Students with composite risk score ≥ 5 based on: low attendance, low motivation, below-threshold exam scores, no internet access, and learning disabilities.</p>
+    </div>
+    <div class="risk-summary-row" id="risk-summary-row">
+      <div class="risk-badge high"><span id="risk-high-count">—</span> High Risk</div>
+      <div class="risk-badge medium"><span id="risk-med-count">—</span> Medium Risk</div>
+      <div class="risk-badge low"><span id="risk-low-count">—</span> Low Risk</div>
+    </div>
+    <div class="risk-charts-row">
+      <div class="chart-card half">
+        <h3 class="chart-title">Risk Distribution</h3>
+        <div class="chart-wrap small"><canvas id="chart-risk-donut"></canvas></div>
+      </div>
+      <div class="chart-card half">
+        <h3 class="chart-title">Risk by Persona</h3>
+        <div class="chart-wrap small"><canvas id="chart-risk-persona"></canvas></div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="risk-table" id="risk-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Persona</th>
+            <th>School</th>
+            <th>Gender</th>
+            <th>Exam Score</th>
+            <th>Attendance</th>
+            <th>Study Hours</th>
+            <th>Motivation</th>
+            <th>Internet</th>
+            <th>Risk Score</th>
+            <th>Risk Level</th>
+          </tr>
+        </thead>
+        <tbody id="risk-tbody">
+          <!-- filled by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════ FEATURE IMPACT ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">📈 Feature Impact on Exam Score</h2>
+      <p class="section-desc">Pearson correlation of each factor with final exam scores. Positive = higher values associated with higher scores. Negative = inverse relationship.</p>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-wrap tall"><canvas id="chart-correlation"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ CLASS ANALYTICS ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">📊 Score & Attendance Analytics</h2>
+      <p class="section-desc">Understand how scores distribute across the class and how attendance and study time drive performance.</p>
+    </div>
+    <div class="charts-2col">
+      <div class="chart-card">
+        <h3 class="chart-title">Score Distribution</h3>
+        <div class="chart-wrap"><canvas id="chart-score-dist"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Avg Score by Attendance Band</h3>
+        <div class="chart-wrap"><canvas id="chart-attend-score"></canvas></div>
+      </div>
+    </div>
+    <div class="charts-2col" style="margin-top:1.5rem">
+      <div class="chart-card">
+        <h3 class="chart-title">Avg Score by Study Hours Band</h3>
+        <div class="chart-wrap"><canvas id="chart-hour-score"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Attendance vs Exam Score (Scatter)</h3>
+        <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ SCHOOL & DEMOGRAPHIC INSIGHTS ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">🏫 School & Demographic Insights</h2>
+      <p class="section-desc">Compare performance across school types, gender, motivation levels, parental involvement, family income, and resource access.</p>
+    </div>
+    <div class="charts-3col">
+      <div class="chart-card">
+        <h3 class="chart-title">School Type Comparison</h3>
+        <div class="chart-wrap"><canvas id="chart-school"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Gender Comparison</h3>
+        <div class="chart-wrap"><canvas id="chart-gender"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Motivation → Avg Score</h3>
+        <div class="chart-wrap"><canvas id="chart-motiv"></canvas></div>
+      </div>
+    </div>
+    <div class="charts-3col" style="margin-top:1.5rem">
+      <div class="chart-card">
+        <h3 class="chart-title">Parental Involvement Impact</h3>
+        <div class="chart-wrap"><canvas id="chart-parent"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Family Income Impact</h3>
+        <div class="chart-wrap"><canvas id="chart-income"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Resource Access Impact</h3>
+        <div class="chart-wrap"><canvas id="chart-resources"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ PERSONA RADAR ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">🕸️ Persona Comparison Radar</h2>
+      <p class="section-desc">Multi-dimensional comparison of all 5 learner personas across key behavioral and academic metrics.</p>
+    </div>
+    <div class="charts-2col">
+      <div class="chart-card">
+        <h3 class="chart-title">Persona Radar</h3>
+        <div class="chart-wrap"><canvas id="chart-radar"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">Avg Exam Score by Persona</h3>
+        <div class="chart-wrap"><canvas id="chart-persona-score"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer class="site-footer">
+  <p>EduInsight — Built for Praxis 2.0 | Powered by K-Means Clustering, Pearson Correlation & Risk Intelligence</p>
+  <p style="opacity:0.5;font-size:0.75rem;margin-top:0.25rem">Dataset: 6,607 students · 20 behavioral, academic & socioeconomic features</p>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
