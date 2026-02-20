@@ -830,15 +830,55 @@ document.getElementById('add-student-form').addEventListener('submit', (e) => {
     if (risk_score >= 5) { risk_label = 'High Risk'; risk_color = '#fca5a5'; }
     else if (risk_score >= 3) { risk_label = 'Medium Risk'; risk_color = '#fcd34d'; }
 
-    // 4. Update UI Context
-    document.getElementById('pred-persona').innerHTML = `<span style="font-size:1.8rem; margin-right:8px">${predictedPersona.icon}</span> <span style="color:${predictedPersona.color}">${predictedPersona.name}</span>`;
+    // 4. Show result as a popup card
+    const popup = document.getElementById('pred-popup');
 
-    document.getElementById('pred-risk').innerHTML = `
-        <div style="font-size:1.5rem; font-weight:900; color:${risk_color}">${risk_score}/10</div>
-        <div style="font-size:0.8rem; font-weight:700; color:${risk_color}; margin-top:-2px">${risk_label}</div>
-    `;
+    document.getElementById('pred-pop-icon').textContent = predictedPersona.icon;
+    document.getElementById('pred-pop-name').textContent = predictedPersona.name;
+    document.getElementById('pred-pop-name').style.color = predictedPersona.color;
+    document.getElementById('pred-pop-desc').textContent = predictedPersona.description;
 
-    document.getElementById('prediction-result').style.display = 'block';
+    // Risk badge
+    const riskColors = { 'High Risk': '#fca5a5', 'Medium Risk': '#fcd34d', 'Low': '#6ee7b7' };
+    const riskBg = { 'High Risk': 'rgba(239,68,68,0.15)', 'Medium Risk': 'rgba(245,158,11,0.15)', 'Low': 'rgba(16,185,129,0.15)' };
+    document.getElementById('pred-pop-risk-label').textContent = risk_label;
+    document.getElementById('pred-pop-risk-label').style.color = riskColors[risk_label] || '#6ee7b7';
+    document.getElementById('pred-pop-risk-label').style.background = riskBg[risk_label] || 'rgba(16,185,129,0.15)';
+    document.getElementById('pred-pop-risk-score').textContent = risk_score + ' / 10';
+    document.getElementById('pred-pop-risk-score').style.color = riskColors[risk_label] || '#6ee7b7';
+
+    // Score bar fill
+    document.getElementById('pred-pop-bar-fill').style.width = (risk_score / 10 * 100) + '%';
+    document.getElementById('pred-pop-bar-fill').style.background =
+        risk_score >= 5 ? 'linear-gradient(90deg,#ef4444,#fca5a5)'
+            : risk_score >= 3 ? 'linear-gradient(90deg,#f59e0b,#fcd34d)'
+                : 'linear-gradient(90deg,#10b981,#6ee7b7)';
+
+    // Key stats grid
+    document.getElementById('pred-pop-score-val').textContent = student.Exam_Score;
+    document.getElementById('pred-pop-attend-val').textContent = student.Attendance + '%';
+    document.getElementById('pred-pop-hours-val').textContent = student.Hours_Studied + 'h';
+    document.getElementById('pred-pop-motiv-val').textContent = student.Motivation_Level;
+
+    // Close add-student modal and show popup
+    addModal.style.display = 'none';
+    popup.style.display = 'flex';
+    // Animate in
+    requestAnimationFrame(() => popup.querySelector('.pred-popup-card').classList.add('visible'));
+});
+
+// Close prediction popup
+document.getElementById('pred-popup-close').addEventListener('click', () => {
+    const popup = document.getElementById('pred-popup');
+    popup.querySelector('.pred-popup-card').classList.remove('visible');
+    setTimeout(() => popup.style.display = 'none', 250);
+});
+document.getElementById('pred-popup').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('pred-popup')) {
+        const popup = document.getElementById('pred-popup');
+        popup.querySelector('.pred-popup-card').classList.remove('visible');
+        setTimeout(() => popup.style.display = 'none', 250);
+    }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

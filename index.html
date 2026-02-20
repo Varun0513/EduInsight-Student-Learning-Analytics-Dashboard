@@ -438,6 +438,62 @@
         </div>
     </div>
 
+    <!-- ═══════════ PREDICTION RESULT POPUP ═══════════ -->
+    <div id="pred-popup" style="display:none" class="pred-popup-overlay">
+        <div class="pred-popup-card">
+            <!-- Close -->
+            <button class="pred-popup-close" id="pred-popup-close" title="Close">✕</button>
+
+            <!-- Header -->
+            <div class="pred-pop-header">
+                <div class="pred-pop-icon-wrap">
+                    <span id="pred-pop-icon" class="pred-pop-icon">🚀</span>
+                </div>
+                <div>
+                    <div class="pred-pop-label">Predicted Learner Persona</div>
+                    <div id="pred-pop-name" class="pred-pop-name">Driven Achiever</div>
+                    <div id="pred-pop-desc" class="pred-pop-desc"></div>
+                </div>
+            </div>
+
+            <!-- Risk -->
+            <div class="pred-pop-risk-row">
+                <div class="pred-pop-risk-left">
+                    <div class="pred-pop-label">Risk Level</div>
+                    <span id="pred-pop-risk-label" class="pred-pop-risk-badge">Low</span>
+                </div>
+                <div class="pred-pop-risk-right">
+                    <div class="pred-pop-label">Risk Score</div>
+                    <div id="pred-pop-risk-score" class="pred-pop-risk-score">0 / 10</div>
+                </div>
+            </div>
+            <!-- Risk bar -->
+            <div class="pred-pop-bar-track">
+                <div id="pred-pop-bar-fill" class="pred-pop-bar-fill"></div>
+            </div>
+
+            <!-- Stats grid -->
+            <div class="pred-pop-stats">
+                <div class="pred-pop-stat">
+                    <div class="pred-pop-stat-label">Exam Score</div>
+                    <div id="pred-pop-score-val" class="pred-pop-stat-val">—</div>
+                </div>
+                <div class="pred-pop-stat">
+                    <div class="pred-pop-stat-label">Attendance</div>
+                    <div id="pred-pop-attend-val" class="pred-pop-stat-val">—</div>
+                </div>
+                <div class="pred-pop-stat">
+                    <div class="pred-pop-stat-label">Study Hours</div>
+                    <div id="pred-pop-hours-val" class="pred-pop-stat-val">—</div>
+                </div>
+                <div class="pred-pop-stat">
+                    <div class="pred-pop-stat-label">Motivation</div>
+                    <div id="pred-pop-motiv-val" class="pred-pop-stat-val">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══════════ FOOTER ═══════════ -->
     <footer class="site-footer">
         <p>EduInsight — Built for Praxis 2.0 | Powered by K-Means Clustering, Pearson Correlation & Risk Intelligence
