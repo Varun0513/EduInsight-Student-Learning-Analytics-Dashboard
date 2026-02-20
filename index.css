@@ -1316,3 +1316,53 @@ select option {
     font-weight: 800;
     color: var(--text-primary);
 }
+
+/* Strategies section inside the popup */
+.pred-pop-strategies-wrap {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+}
+
+.pred-pop-strategies {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.pred-pop-tip {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.7rem 0.9rem;
+    transition: var(--transition);
+}
+
+.pred-pop-tip:hover {
+    background: rgba(124, 58, 237, 0.06);
+    border-color: rgba(124, 58, 237, 0.2);
+}
+
+.pred-pop-tip-num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+}
+
+.pred-pop-tip-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}

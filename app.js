@@ -860,6 +860,26 @@ document.getElementById('add-student-form').addEventListener('submit', (e) => {
     document.getElementById('pred-pop-hours-val').textContent = student.Hours_Studied + 'h';
     document.getElementById('pred-pop-motiv-val').textContent = student.Motivation_Level;
 
+    // Teaching strategies — inject/refresh section into the card
+    let stratSection = document.getElementById('pred-pop-strategy-section');
+    if (!stratSection) {
+        stratSection = document.createElement('div');
+        stratSection.id = 'pred-pop-strategy-section';
+        stratSection.className = 'pred-pop-strategies-wrap';
+        popup.querySelector('.pred-popup-card').appendChild(stratSection);
+    }
+    stratSection.innerHTML = `
+        <div class="pred-pop-label" style="margin-bottom:0.7rem">📋 Teaching Strategies</div>
+        <div class="pred-pop-strategies">
+            ${(predictedPersona.strategies || []).map((s, i) => `
+                <div class="pred-pop-tip">
+                    <div class="pred-pop-tip-num">${i + 1}</div>
+                    <div class="pred-pop-tip-text">${s}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
     // Close add-student modal and show popup
     addModal.style.display = 'none';
     popup.style.display = 'flex';
