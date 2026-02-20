@@ -26,8 +26,10 @@ EduInsight is a **client-side analytics dashboard** that runs directly in any br
 | ⚠️ **Risk Radar** | Composite disengagement score flags students before they fail |
 | 📈 **Feature Impact** | Pearson correlation reveals which factors actually drive scores |
 | 💡 **Strategy Recommender** | Per-persona instructional strategies for teachers |
+| 👩‍🏫 **Teacher Input (Live Prediction)** | Instantly predict Risk & Persona for a new student without Python |
+| 📄 **Batch CSV Upload** | Bulk predict risk levels for an entire class instantly via CSV upload |
 | 📊 **15 Interactive Charts** | Score distribution, attendance bands, scatter plots, radar |
-| 🔍 **Live Filters** | Filter by School Type, Gender, Motivation Level |
+| 🔍 **Live Filters & Sorting** | Filter by School/Gender/Motivation, Sort columns in Risk Table |
 
 ---
 

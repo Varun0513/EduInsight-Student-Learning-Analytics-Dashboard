@@ -39,6 +39,59 @@ const scatterColors = {
     3: 'rgba(239,68,68,0.7)',
     4: 'rgba(16,185,129,0.7)',
 };
+// ═══════════════════════════════════════════════════════════════════════════════
+// PERSONA CLASSIFICATION — Strict score-first rules aligned to cluster averages:
+//   Cluster  │ Avg Score │ Avg Attendance │ Definition
+//   ─────────┼───────────┼────────────────┼───────────────────────────────────
+//   0 DA     │  70.03    │   89.83 %      │ Current top performer
+//   1 CW     │  68.37    │   89.03 %      │ Reliable, consistent, solid attend.
+//   2 PC     │  68.23    │   88.14 %      │ Capable but coasting
+//   3 SL     │  64.55    │   69.03 %      │ Struggling — low score & attend.
+//   4 PB     │  65.84    │   69.76 %      │ High prev score, low current output
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function resolvePersona(s, kmeansId) {
+    const score = s.score ?? s.Exam_Score ?? 0;
+    const attend = s.attend ?? s.Attendance ?? 0;
+    const motiv = s.motiv ?? s.Motivation_Level ?? 'Medium';
+    const hours = s.hours ?? s.Hours_Studied ?? 20;
+    const prev = s.prev ?? s.Previous_Scores ?? 70;
+
+    // ══════════════════════════════════════════════════════════
+    // HARD SCORE GATES — applied BEFORE per-cluster logic
+    // A student's current exam score is the primary truth signal.
+    // ══════════════════════════════════════════════════════════
+
+    // Score < 63 → never a Driven Achiever or Consistent Worker
+    if (score < 63) {
+        if (prev >= 78) return 4; // Potential Bloomer (had strong past, slipped)
+        return 3;                 // Struggling Learner
+    }
+
+    // Score 63–69 → cannot be Driven Achiever (cluster avg is 70.03)
+    if (score < 70) {
+        // High attendance saves them to Consistent Worker
+        if (attend >= 85) return 1; // Consistent Worker
+        // Was once good (high prev) but now underperforming
+        if (prev >= 80 && score < prev - 8) return 4; // Potential Bloomer
+        // Typical mid-range
+        if (attend >= 75) return 2; // Passive Coaster
+        // Low attendance → struggling
+        if (attend < 72) return 3; // Struggling Learner
+        return 2; // Passive Coaster (default mid-range)
+    }
+
+    // Score 70–74 → can be Driven Achiever only with solid attendance
+    if (score < 75) {
+        if (attend >= 82) return 0; // Driven Achiever
+        if (attend >= 72) return 1; // Consistent Worker
+        if (prev >= 78) return 4; // Potential Bloomer (dropping in)
+        return 3;                   // Struggling Learner
+    }
+
+    // Score ≥ 75 → Driven Achiever (regardless of other factors)
+    return 0;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FILTERING LOGIC — in a real implementation we'd re-run analytics on filtered
@@ -53,9 +106,15 @@ function filteredScatter() {
     });
 }
 
-/** Filter risk table */
+// Toggle: show all students or only high-risk
+let showAllStudents = false;
+
+/** Filter risk table — uses all_students when toggle is on */
 function filteredRisk() {
-    return ANALYTICS.risk_table.filter(r => {
+    const source = showAllStudents
+        ? (ANALYTICS.all_students || ANALYTICS.risk_table)
+        : ANALYTICS.risk_table;
+    return source.filter(r => {
         if (state.school !== 'All' && r.school !== state.school) return false;
         if (state.gender !== 'All' && r.gender !== state.gender) return false;
         if (state.motiv !== 'All' && r.motiv !== state.motiv) return false;
@@ -179,15 +238,99 @@ function renderRiskSummary() {
     document.getElementById('risk-high-count').textContent = ANALYTICS.kpis.high_risk.toLocaleString();
     document.getElementById('risk-med-count').textContent = ANALYTICS.kpis.medium_risk.toLocaleString();
     document.getElementById('risk-low-count').textContent = ANALYTICS.kpis.low_risk.toLocaleString();
+
+    // Render / update the toggle button group
+    const container = document.getElementById('risk-view-toggle');
+    if (!container) return;
+    const total = (ANALYTICS.all_students || ANALYTICS.risk_table).length;
+    container.innerHTML = `
+      <button id="btn-view-highrisk" class="view-toggle-btn ${!showAllStudents ? 'active' : ''}"
+              title="Show only high-risk students">
+        ⚠️ High-Risk Only &nbsp;<span class="toggle-count">${ANALYTICS.kpis.high_risk.toLocaleString()}</span>
+      </button>
+      <button id="btn-view-all" class="view-toggle-btn ${showAllStudents ? 'active' : ''}"
+              title="Show all students">
+        👥 All Students &nbsp;<span class="toggle-count">${total.toLocaleString()}</span>
+      </button>
+    `;
+    container.querySelector('#btn-view-highrisk').addEventListener('click', () => {
+        if (showAllStudents) { showAllStudents = false; currentRiskPage = 1; renderRiskSummary(); renderRiskTable(); }
+    });
+    container.querySelector('#btn-view-all').addEventListener('click', () => {
+        if (!showAllStudents) { showAllStudents = true; currentRiskPage = 1; renderRiskSummary(); renderRiskTable(); }
+    });
 }
 
+let riskSortCol = 'risk_score';
+let riskSortAsc = false;
+let currentRiskPage = 1;
+const rowsPerRiskPage = 50;
+
 function renderRiskTable() {
-    const rows = filteredRisk();
+    let rows = filteredRisk();
+
+    // Perform sorting
+    rows.sort((a, b) => {
+        let valA = a[riskSortCol];
+        let valB = b[riskSortCol];
+
+        if (riskSortCol === 'persona') {
+            // Sort by resolved persona — rank from best to worst
+            const rank = {
+                'Driven Achiever': 0,
+                'Consistent Worker': 1,
+                'Potential Bloomer': 2,
+                'Passive Coaster': 3,
+                'Struggling Learner': 4
+            };
+            valA = rank[ANALYTICS.clusters[resolvePersona(a, a.persona)]?.name] ?? 5;
+            valB = rank[ANALYTICS.clusters[resolvePersona(b, b.persona)]?.name] ?? 5;
+        } else if (riskSortCol === 'risk') {
+            const m = { 'Low Risk': 0, 'Medium Risk': 1, 'High Risk': 2 };
+            valA = m[a.risk] || 0;
+            valB = m[b.risk] || 0;
+        } else if (riskSortCol === 'internet') {
+            valA = a.internet === 'Yes' ? 1 : 0;
+            valB = b.internet === 'Yes' ? 1 : 0;
+        } else if (riskSortCol === 'motiv') {
+            const m = { 'Low': 0, 'Medium': 1, 'High': 2 };
+            valA = m[a.motiv] || 0;
+            valB = m[b.motiv] || 0;
+        }
+
+        if (typeof valA === 'string' && typeof valB === 'string') {
+            return riskSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+
+        if (valA < valB) return riskSortAsc ? -1 : 1;
+        if (valA > valB) return riskSortAsc ? 1 : -1;
+        return 0;
+    });
+
+    const totalRows = rows.length;
+    const totalPages = Math.ceil(totalRows / rowsPerRiskPage);
+    if (currentRiskPage > totalPages) currentRiskPage = totalPages;
+    if (currentRiskPage < 1) currentRiskPage = 1;
+
+    const startIdx = (currentRiskPage - 1) * rowsPerRiskPage;
+    const endIdx = startIdx + rowsPerRiskPage;
+    const pageRows = rows.slice(startIdx, endIdx);
+
+    // Update Pagination UI
+    document.getElementById('pagination-info').textContent = totalRows > 0
+        ? `Showing ${startIdx + 1}-${Math.min(endIdx, totalRows)} of ${totalRows}`
+        : 'Showing 0-0 of 0';
+
+    document.getElementById('btn-prev-page').disabled = currentRiskPage === 1;
+    document.getElementById('btn-next-page').disabled = currentRiskPage === totalPages || totalPages === 0;
+
     const tbody = document.getElementById('risk-tbody');
-    tbody.innerHTML = rows.map((r, i) => {
-        const p = ANALYTICS.clusters[r.persona];
+    tbody.innerHTML = pageRows.map((r, i) => {
+        const resolvedId = resolvePersona(r, r.persona);
+        const p = ANALYTICS.clusters[resolvedId];
+        const displayIndex = startIdx + i + 1;
         return `<tr>
-      <td style="color:var(--text-muted)">${i + 1}</td>
+      <td style="color:var(--text-muted)">${displayIndex}</td>
       <td>
         <span style="margin-right:4px">${p.icon}</span>
         <span style="color:${p.color};font-weight:600;font-size:0.73rem">${p.name}</span>
@@ -586,9 +729,362 @@ document.getElementById('filter-motiv').addEventListener('change', e => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ADD STUDENT PREDICITON LOGIC
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const addModal = document.getElementById('add-modal');
+const btnAdd = document.getElementById('btn-add-student');
+const btnClose = document.getElementById('close-modal');
+
+btnAdd.addEventListener('click', () => {
+    addModal.style.display = 'flex';
+    document.getElementById('prediction-result').style.display = 'none';
+});
+
+btnClose.addEventListener('click', () => {
+    addModal.style.display = 'none';
+});
+
+// Close modal when clicking outside
+addModal.addEventListener('click', (e) => {
+    if (e.target === addModal) addModal.style.display = 'none';
+});
+
+document.getElementById('add-student-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    // 1. Collect inputs
+    const student = {
+        Hours_Studied: parseFloat(document.getElementById('inp-hours').value),
+        Attendance: parseFloat(document.getElementById('inp-attend').value),
+        Sleep_Hours: parseFloat(document.getElementById('inp-sleep').value),
+        Previous_Scores: parseFloat(document.getElementById('inp-prev').value),
+        Tutoring_Sessions: parseFloat(document.getElementById('inp-tutor').value),
+        Physical_Activity: parseFloat(document.getElementById('inp-phys').value),
+        Motivation_Level: document.getElementById('inp-motiv').value,
+        Internet_Access: document.getElementById('inp-internet').value,
+        Learning_Disabilities: document.getElementById('inp-disable').value,
+        Peer_Influence: document.getElementById('inp-peer').value,
+        Exam_Score: parseFloat(document.getElementById('inp-score').value)
+    };
+
+    // 2. Predict Persona (K-Means distance to centers)
+    const features = ['Hours_Studied', 'Attendance', 'Sleep_Hours', 'Previous_Scores', 'Tutoring_Sessions', 'Physical_Activity'];
+    const norm_stats = ANALYTICS.norm_stats;
+    const centers = ANALYTICS.centers;
+
+    // Normalize input
+    const norm_input = features.map(f => {
+        const val = student[f];
+        const min = norm_stats[f][0];
+        const range = norm_stats[f][1];
+        return (val - min) / range;
+    });
+
+    // Find closest center
+    let closestPersonaId = -1;
+    let minDistance = Infinity;
+
+    for (const [p_idx, center] of Object.entries(centers)) {
+        let distSq = 0;
+        for (let i = 0; i < center.length; i++) {
+            distSq += Math.pow(norm_input[i] - center[i], 2);
+        }
+        const dist = Math.sqrt(distSq);
+        if (dist < minDistance) {
+            minDistance = dist;
+            closestPersonaId = p_idx;
+        }
+    }
+
+    // Validate K-means persona against actual traits
+    const studentTraits = {
+        score: student.Exam_Score,
+        attend: student.Attendance,
+        motiv: student.Motivation_Level,
+        hours: student.Hours_Studied,
+        prev: student.Previous_Scores,
+        risk_score: 0 // will calculate below
+    };
+    closestPersonaId = resolvePersona(studentTraits, +closestPersonaId);
+    const predictedPersona = ANALYTICS.personas[closestPersonaId];
+
+    // 3. Predict Risk Score (Rule-based)
+    let risk_score = 0;
+    if (student.Attendance < 70.0) risk_score += 2;
+    else if (student.Attendance < 80.0) risk_score += 1;
+
+    if (student.Motivation_Level === 'Low') risk_score += 2;
+    else if (student.Motivation_Level === 'Medium') risk_score += 1;
+
+    if (student.Exam_Score < 62.0) risk_score += 2;
+    else if (student.Exam_Score < 67.0) risk_score += 1;
+
+    if (student.Internet_Access === 'No') risk_score += 1;
+    if (student.Learning_Disabilities === 'Yes') risk_score += 1;
+    if (student.Hours_Studied < 10.0) risk_score += 1;
+    if (student.Peer_Influence === 'Negative') risk_score += 1;
+
+    let risk_label = 'Low';
+    let risk_color = '#6ee7b7';
+    if (risk_score >= 5) { risk_label = 'High Risk'; risk_color = '#fca5a5'; }
+    else if (risk_score >= 3) { risk_label = 'Medium Risk'; risk_color = '#fcd34d'; }
+
+    // 4. Update UI Context
+    document.getElementById('pred-persona').innerHTML = `<span style="font-size:1.8rem; margin-right:8px">${predictedPersona.icon}</span> <span style="color:${predictedPersona.color}">${predictedPersona.name}</span>`;
+
+    document.getElementById('pred-risk').innerHTML = `
+        <div style="font-size:1.5rem; font-weight:900; color:${risk_color}">${risk_score}/10</div>
+        <div style="font-size:0.8rem; font-weight:700; color:${risk_color}; margin-top:-2px">${risk_label}</div>
+    `;
+
+    document.getElementById('prediction-result').style.display = 'block';
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH STUDENT UPLOAD LOGIC
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Tab Switching
+document.querySelectorAll('.modal-tab').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.modal-tab').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+
+        const targetId = e.target.getAttribute('data-target');
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        document.getElementById(targetId).classList.add('active');
+    });
+});
+
+// CSV Processing
+let batchPredictions = [];
+
+document.getElementById('inp-csv').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    document.getElementById('csv-filename').textContent = file.name;
+    document.getElementById('csv-filename').style.display = 'block';
+
+    const reader = new FileReader();
+    reader.onload = function (event) {
+        processCSV(event.target.result);
+    };
+    reader.readAsText(file);
+});
+
+function processCSV(csvText) {
+    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+    if (lines.length < 2) return alert("CSV file seems empty or invalid.");
+
+    const headers = lines[0].split(',').map(h => h.trim());
+    const expectedHeaders = [
+        'Hours_Studied', 'Attendance', 'Sleep_Hours', 'Previous_Scores',
+        'Tutoring_Sessions', 'Physical_Activity', 'Motivation_Level',
+        'Internet_Access', 'Learning_Disabilities', 'Peer_Influence', 'Exam_Score'
+    ];
+
+    const indices = {};
+    for (const header of expectedHeaders) {
+        const idx = headers.indexOf(header);
+        if (idx === -1) return alert(`CSV is missing required column: ${header}`);
+        indices[header] = idx;
+    }
+
+    batchPredictions = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        // Quick regex to handle CSV splitting preserving quotes if needed, 
+        // but simple split is ok for our generated Dataset as there are no commas in fields.
+        const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        if (cols.length < expectedHeaders.length) continue;
+
+        const student = {
+            Hours_Studied: parseFloat(cols[indices['Hours_Studied']]),
+            Attendance: parseFloat(cols[indices['Attendance']]),
+            Sleep_Hours: parseFloat(cols[indices['Sleep_Hours']]),
+            Previous_Scores: parseFloat(cols[indices['Previous_Scores']]),
+            Tutoring_Sessions: parseFloat(cols[indices['Tutoring_Sessions']]),
+            Physical_Activity: parseFloat(cols[indices['Physical_Activity']]),
+            Motivation_Level: cols[indices['Motivation_Level']],
+            Internet_Access: cols[indices['Internet_Access']],
+            Learning_Disabilities: cols[indices['Learning_Disabilities']],
+            Peer_Influence: cols[indices['Peer_Influence']],
+            Exam_Score: parseFloat(cols[indices['Exam_Score']])
+        };
+
+        batchPredictions.push(predictStudent(student));
+    }
+    renderBatchResults();
+}
+
+function predictStudent(student) {
+    const features = ['Hours_Studied', 'Attendance', 'Sleep_Hours', 'Previous_Scores', 'Tutoring_Sessions', 'Physical_Activity'];
+    const norm_stats = ANALYTICS.norm_stats;
+    const centers = ANALYTICS.centers;
+
+    const norm_input = features.map(f => {
+        const val = student[f] || 0;
+        const min = norm_stats[f][0];
+        const range = norm_stats[f][1];
+        return (val - min) / range;
+    });
+
+    let closestPersonaId = -1;
+    let minDistance = Infinity;
+
+    for (const [p_idx, center] of Object.entries(centers)) {
+        let distSq = 0;
+        for (let i = 0; i < center.length; i++) {
+            distSq += Math.pow(norm_input[i] - center[i], 2);
+        }
+        const dist = Math.sqrt(distSq);
+        if (dist < minDistance) {
+            minDistance = dist;
+            closestPersonaId = p_idx;
+        }
+    }
+
+    // Calculate risk score first so resolvePersona can use it
+    let pre_risk = 0;
+    if (student.Attendance < 70.0) pre_risk += 2;
+    else if (student.Attendance < 80.0) pre_risk += 1;
+    if (student.Motivation_Level === 'Low') pre_risk += 2;
+    else if (student.Motivation_Level === 'Medium') pre_risk += 1;
+    if (student.Exam_Score < 62.0) pre_risk += 2;
+    else if (student.Exam_Score < 67.0) pre_risk += 1;
+    if (student.Internet_Access === 'No') pre_risk += 1;
+    if (student.Learning_Disabilities === 'Yes') pre_risk += 1;
+    if (student.Hours_Studied < 10.0) pre_risk += 1;
+    if (student.Peer_Influence === 'Negative') pre_risk += 1;
+
+    // Validate K-means persona against actual traits
+    const studentTraits = {
+        score: student.Exam_Score,
+        attend: student.Attendance,
+        motiv: student.Motivation_Level,
+        hours: student.Hours_Studied,
+        prev: student.Previous_Scores,
+        risk_score: pre_risk
+    };
+    closestPersonaId = resolvePersona(studentTraits, +closestPersonaId);
+    const predictedPersona = ANALYTICS.personas[closestPersonaId];
+
+    let risk_score = 0;
+    if (student.Attendance < 70.0) risk_score += 2;
+    else if (student.Attendance < 80.0) risk_score += 1;
+
+    if (student.Motivation_Level === 'Low') risk_score += 2;
+    else if (student.Motivation_Level === 'Medium') risk_score += 1;
+
+    if (student.Exam_Score < 62.0) risk_score += 2;
+    else if (student.Exam_Score < 67.0) risk_score += 1;
+
+    if (student.Internet_Access === 'No') risk_score += 1;
+    if (student.Learning_Disabilities === 'Yes') risk_score += 1;
+    if (student.Hours_Studied < 10.0) risk_score += 1;
+    if (student.Peer_Influence === 'Negative') risk_score += 1;
+
+    let risk_label = 'Low';
+    let risk_pill_class = 'Low';
+    if (risk_score >= 5) { risk_label = 'High Risk'; risk_pill_class = 'High'; }
+    else if (risk_score >= 3) { risk_label = 'Medium Risk'; risk_pill_class = 'Medium'; }
+
+    return {
+        persona: predictedPersona,
+        risk_score: risk_score,
+        risk_label: risk_label,
+        risk_pill_class: risk_pill_class
+    };
+}
+
+function renderBatchResults() {
+    document.getElementById('batch-count').textContent = batchPredictions.length;
+    const tbody = document.getElementById('batch-tbody');
+
+    tbody.innerHTML = batchPredictions.map((res, i) => `
+        <tr>
+            <td style="color:var(--text-muted)">${i + 1}</td>
+            <td>
+                <span style="font-size:1.2rem; margin-right:4px">${res.persona.icon}</span>
+                <span style="font-weight:600; color:${res.persona.color}">${res.persona.name}</span>
+            </td>
+            <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div style="width:${res.risk_score * 5}px;height:6px;background:linear-gradient(90deg,#ef4444,#fca5a5);border-radius:99px;min-width:4px"></div>
+                  <span style="font-weight:700">${res.risk_score}/10</span>
+                </div>
+            </td>
+            <td><span class="risk-pill ${res.risk_pill_class}">${res.risk_label}</span></td>
+        </tr>
+    `).join('');
+
+    document.getElementById('batch-results').style.display = 'block';
+}
+
+// Export Results
+document.getElementById('btn-export-batch').addEventListener('click', () => {
+    if (batchPredictions.length === 0) return;
+
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    csvContent += 'Row_Number,Predicted_Persona,Risk_Score,Risk_Level\n';
+
+    batchPredictions.forEach((res, i) => {
+        csvContent += `${i + 1},"${res.persona.name}",${res.risk_score},${res.risk_label}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', 'EduInsight_Batch_Predictions.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
+    // Header Sorting Listeners
+    document.querySelectorAll('#risk-table th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.sort;
+            if (riskSortCol === col) {
+                riskSortAsc = !riskSortAsc;
+            } else {
+                riskSortCol = col;
+                riskSortAsc = false;
+            }
+
+            // Update UI classes
+            document.querySelectorAll('#risk-table th.sortable').forEach(h => {
+                h.classList.remove('asc', 'desc');
+            });
+            th.classList.add(riskSortAsc ? 'asc' : 'desc');
+
+            currentRiskPage = 1; // Reset to page 1 on sort
+            renderRiskTable();
+        });
+    });
+
+    // Initialize Default Sort UI
+    const defaultTh = document.querySelector(`#risk-table th.sortable[data-sort="${riskSortCol}"]`);
+    if (defaultTh) defaultTh.classList.add(riskSortAsc ? 'asc' : 'desc');
+
+    // Pagination Listeners
+    document.getElementById('btn-prev-page').addEventListener('click', () => {
+        if (currentRiskPage > 1) {
+            currentRiskPage--;
+            renderRiskTable();
+        }
+    });
+
+    document.getElementById('btn-next-page').addEventListener('click', () => {
+        currentRiskPage++;
+        renderRiskTable();
+    });
     renderPersonas();
     renderAll();
 });

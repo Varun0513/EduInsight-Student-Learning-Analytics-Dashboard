@@ -64,7 +64,7 @@ CLUSTER_FEATURES = [
     'Previous_Scores', 'Tutoring_Sessions', 'Physical_Activity'
 ]
 
-def normalize(data: List[Dict[str, Any]], features: List[str]) -> List[Dict[str, Any]]:
+def normalize(data: List[Dict[str, Any]], features: List[str]) -> Tuple[List[Dict[str, Any]], Dict[str, Tuple[float, float]]]:
     stats: Dict[str, Tuple[float, float]] = {}
     for f in features:
         vals = [float(r[f]) for r in data]
@@ -73,7 +73,7 @@ def normalize(data: List[Dict[str, Any]], features: List[str]) -> List[Dict[str,
     
     for r in data:
         r['_norm'] = [(float(r[f]) - stats[f][0]) / stats[f][1] for f in features]
-    return data
+    return data, stats
 
 def dist(a: List[float], b: List[float]) -> float:
     return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
@@ -167,62 +167,67 @@ PERSONA_PROFILES = [
     }
 ]
 
-def assign_persona_labels(labels: List[int], data: List[Dict[str, Any]], centers: List[List[float]], k: int = 5) -> Tuple[List[int], Dict[int, Any], Dict[int, int]]:
-    """Map cluster IDs to meaningful persona labels based on cluster characteristics."""
-    cluster_stats = {}
-    for c in range(k):
-        members = [data[i] for i in range(len(data)) if labels[i] == c]
-        if not members:
-            continue
-        cluster_stats[c] = {
-            'count': len(members),
-            'avg_hours': sum(m['Hours_Studied'] for m in members) / len(members),
-            'avg_attend': sum(m['Attendance'] for m in members) / len(members),
-            'avg_score': sum(m['Exam_Score'] for m in members) / len(members),
-            'avg_prev': sum(m['Previous_Scores'] for m in members) / len(members),
-            'avg_tutor': sum(m['Tutoring_Sessions'] for m in members) / len(members),
-        }
-        
-    sorted_by_score = sorted(cluster_stats.keys(), key=lambda c: cluster_stats[c]['avg_score'], reverse=True)
-    sorted_by_hours = sorted(cluster_stats.keys(), key=lambda c: cluster_stats[c]['avg_hours'], reverse=True)
-    sorted_by_attend = sorted(cluster_stats.keys(), key=lambda c: cluster_stats[c]['avg_attend'], reverse=True)
-    sorted_by_prev = sorted(cluster_stats.keys(), key=lambda c: cluster_stats[c]['avg_prev'], reverse=True)
-
-    mapping: Dict[int, int] = {}
+def assign_persona_by_score(data: List[Dict[str, Any]]) -> List[int]:
+    """
+    Assign persona labels using the same score-first rules as resolvePersona() in app.js.
     
-    # Driven Achiever
-    for c in sorted_by_score:
-        if c not in mapping.values():
-            mapping[0] = c
-            break
-            
-    # Struggling Learner
-    for c in reversed(sorted_by_score):
-        if c not in mapping.values():
-            mapping[3] = c
-            break
-            
-    # Consistent Worker
-    for c in sorted_by_attend:
-        if c not in mapping.values():
-            mapping[1] = c
-            break
-            
-    # Potential Bloomer
-    for c in sorted_by_prev:
-        if c not in mapping.values():
-            mapping[4] = c
-            break
-            
-    # Passive Coaster
-    for c in range(k):
-        if c not in mapping.values():
-            mapping[2] = c
-            break
+    Persona IDs:
+      0 = Driven Achiever    — high current exam score + solid attendance
+      1 = Consistent Worker  — solid attendance, moderate-good scores
+      2 = Passive Coaster    — mid-range metrics, coasting
+      3 = Struggling Learner — low score / low attendance / at-risk
+      4 = Potential Bloomer  — high previous score but underperforming now
+    
+    Cluster averages (for reference):
+      DA:  avg_score ~70, avg_attend ~90%
+      CW:  avg_score ~68, avg_attend ~89%
+      PC:  avg_score ~68, avg_attend ~88%
+      SL:  avg_score ~65, avg_attend ~69%
+      PB:  avg_score ~66, avg_attend ~70%
+    """
+    labels = []
+    for r in data:
+        score  = float(r['Exam_Score'])
+        attend = float(r['Attendance'])
+        prev   = float(r['Previous_Scores'])
 
-    reverse_map = {v: k for k, v in mapping.items()}
-    persona_labels = [reverse_map.get(lbl, 2) for lbl in labels]
-    return persona_labels, cluster_stats, mapping
+        # Score < 63 → never a Driven Achiever or Consistent Worker
+        if score < 63:
+            if prev >= 78:
+                labels.append(4)  # Potential Bloomer (had strong past, slipped)
+            else:
+                labels.append(3)  # Struggling Learner
+
+        # Score 63–69 → at most Consistent Worker
+        elif score < 70:
+            if attend >= 85:
+                labels.append(1)  # Consistent Worker (high attend saves them)
+            elif prev >= 80 and score < prev - 8:
+                labels.append(4)  # Potential Bloomer (was once much better)
+            elif attend >= 75:
+                labels.append(2)  # Passive Coaster
+            elif attend < 72:
+                labels.append(3)  # Struggling Learner (low attend + low score)
+            else:
+                labels.append(2)  # Passive Coaster (default mid-range)
+
+        # Score 70–74 → DA only with solid attendance
+        elif score < 75:
+            if attend >= 82:
+                labels.append(0)  # Driven Achiever
+            elif attend >= 72:
+                labels.append(1)  # Consistent Worker
+            elif prev >= 78:
+                labels.append(4)  # Potential Bloomer (dropping from past highs)
+            else:
+                labels.append(3)  # Struggling Learner
+
+        # Score ≥ 75 → Driven Achiever unconditionally
+        else:
+            labels.append(0)
+
+    return labels
+
 
 # ── 3. Risk Scoring ────────────────────────────────────────────────────────────
 def compute_risk(row: Dict[str, Any]) -> Tuple[int, str]:
@@ -321,9 +326,21 @@ def main() -> None:
     print(f"  {len(data)} students loaded")
 
     print("Normalizing + clustering...")
-    data = normalize(data, CLUSTER_FEATURES)
+    data, norm_stats = normalize(data, CLUSTER_FEATURES)
     labels, centers = kmeans(data, k=5, iters=40)
-    persona_labels, cluster_stats, persona_map = assign_persona_labels(labels, data, centers)
+
+    # Assign personas using score-based rules (same as resolvePersona() in app.js)
+    persona_labels = assign_persona_by_score(data)
+
+    # Keep K-means centers for the live prediction form — map raw cluster → best persona
+    # We still need a rough mapping for the scatter chart coloring
+    from collections import Counter
+    cluster_to_persona = {}
+    for raw_lbl, p_lbl in zip(labels, persona_labels):
+        cluster_to_persona.setdefault(raw_lbl, []).append(p_lbl)
+    # Pick the most common persona per cluster
+    cluster_to_persona = {c: Counter(ps).most_common(1)[0][0] for c, ps in cluster_to_persona.items()}
+    mapped_centers = {cluster_to_persona.get(i, i): centers[i] for i in range(5)}
 
     for i, r in enumerate(data):
         r['persona'] = persona_labels[i]
@@ -339,12 +356,10 @@ def main() -> None:
     print("Computing correlations...")
     correlations = compute_correlations(data)
 
-    # Cluster summaries
+    # Cluster summaries — based on score-assigned persona labels
     cluster_summaries = []
-    for p_idx, c_idx in sorted(persona_map.items(), key=lambda x: x[0]):
+    for p_idx in range(5):
         members = [r for r in data if r['persona'] == p_idx]
-        if not members:
-            members = [r for r in data if labels[data.index(r)] == c_idx]
         profile = PERSONA_PROFILES[p_idx]
         cluster_summaries.append({
             'id': p_idx,
@@ -422,9 +437,9 @@ def main() -> None:
                      'hours': r['Hours_Studied'], 'persona': r['persona'],
                      'risk': r['risk_label']} for r in sample]
 
-    # Top risk students table (up to 50 highest risk)
+    # Top risk students table
     high_risk = sorted([r for r in data if r['risk_label'] == 'High'],
-                       key=lambda r: float(r['risk_score']), reverse=True)[:50]
+                       key=lambda r: float(r['risk_score']), reverse=True)
     risk_table = [{
         'id': i + 1,
         'gender': r['Gender'],
@@ -443,7 +458,26 @@ def main() -> None:
         'peer': r['Peer_Influence'],
     } for i, r in enumerate(high_risk)]
 
-    # Global KPIs
+    # All students table (for full-roster view in dashboard)
+    all_students_sorted = sorted(data, key=lambda r: float(r['Exam_Score']), reverse=True)
+    all_students = [{
+        'id': i + 1,
+        'gender': r['Gender'],
+        'school': r['School_Type'],
+        'score': r['Exam_Score'],
+        'attend': r['Attendance'],
+        'hours': r['Hours_Studied'],
+        'motiv': r['Motivation_Level'],
+        'risk': r['risk_label'],
+        'risk_score': r['risk_score'],
+        'persona': r['persona'],
+        'internet': r['Internet_Access'],
+        'tutor': r['Tutoring_Sessions'],
+        'prev': r['Previous_Scores'],
+        'disability': r['Learning_Disabilities'],
+        'peer': r['Peer_Influence'],
+    } for i, r in enumerate(all_students_sorted)]
+
     kpis = {
         'total': len(data),
         'avg_score': avg([float(r['Exam_Score']) for r in data]),
@@ -459,6 +493,8 @@ def main() -> None:
     # Final output object
     output = {
         'kpis': kpis,
+        'norm_stats': norm_stats,
+        'centers': mapped_centers,
         'clusters': cluster_summaries,
         'correlations': correlations,
         'score_dist': score_dist,
@@ -472,6 +508,7 @@ def main() -> None:
         'hour_score': hour_score,
         'scatter': scatter_data,
         'risk_table': risk_table,
+        'all_students': all_students,
         'personas': PERSONA_PROFILES,
     }
 
