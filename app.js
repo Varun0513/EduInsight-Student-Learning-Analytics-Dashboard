@@ -901,31 +901,73 @@ document.getElementById('add-student-form').addEventListener('submit', (e) => {
                 <span>Generating personalised advice…</span>
             </div>
         `;
-        const aiPrompt = `You are an expert educational advisor. A student has been classified as "${predictedPersona.name}" with:
-- Exam Score: ${student.Exam_Score}/100
-- Attendance: ${student.Attendance}%
-- Study Hours: ${student.Hours_Studied}h/week
-- Risk Level: ${risk_label} (score ${risk_score}/10)
-- Motivation: ${student.Motivation_Level}
+        const sysCtx = `You are an expert school teacher giving SPECIFIC, actionable classroom strategies for ONE student.
+Rules:
+- Output ONLY 4 numbered strategies. No intro, no extra text.
+- Every strategy must directly reference the student's actual numbers (score, attendance %, hours).
+- Strategies must be different from each other (academic, behavioural, motivational, parental/support).
+- Be concrete: name specific techniques, tools, or actions a teacher can do this week.
+- Do NOT give generic advice like "talk to the student" or "assign extra work".
+Format:
+1. [strategy]
+2. [strategy]
+3. [strategy]
+4. [strategy]`;
 
-Provide exactly 4 concise, practical teaching strategies specifically tailored to this student's exact profile. 
-Format: return ONLY a JSON array of 4 strings, no markdown, no extra text. Example: ["Strategy 1","Strategy 2","Strategy 3","Strategy 4"]`;
+        const personaDesc = predictedPersona.description || '';
+        const aiPrompt = `Struggling student profile:
+- Learner Persona: ${predictedPersona.name} — ${personaDesc}
+- Exam Score: ${student.Exam_Score}/100 (${student.Exam_Score < 50 ? 'critically low' : student.Exam_Score < 65 ? 'below average' : 'borderline'})
+- Attendance: ${student.Attendance}% (${student.Attendance < 60 ? 'severe absenteeism' : student.Attendance < 80 ? 'concerning absenteeism' : 'acceptable'})
+- Weekly Study Hours: ${student.Hours_Studied}h (${student.Hours_Studied < 5 ? 'very low effort' : student.Hours_Studied < 10 ? 'below recommended' : 'adequate'})
+- Motivation Level: ${student.Motivation_Level}
+- Disengagement Risk: ${risk_label} (${risk_score}/10)
+- Previous Scores: ${student.Previous_Scores || 'N/A'}
 
-        callGemini(aiPrompt).then(text => {
-            try {
-                const match = text.match(/\[[\s\S]*\]/);
-                const tips = match ? JSON.parse(match[0]) : null;
-                if (Array.isArray(tips) && tips.length > 0) {
-                    renderTips(tips, true);
+Based SPECIFICALLY on this student's exact numbers above, give 4 classroom strategies the teacher should implement now.`;
+
+
+        callGemini(aiPrompt, sysCtx).then(text => {
+            console.log('[AI Strategies] Raw response:', text);
+
+            // Robust parser: try numbered list, then bullet, then line-split
+            let tips = [];
+
+            // Match "1. tip" or "1) tip" patterns
+            const numbered = [...text.matchAll(/^\s*\d+[\.\)]\s*(.+)/gm)]
+                .map(m => m[1].trim())
+                .filter(t => t.length > 8);
+
+            if (numbered.length >= 2) {
+                tips = numbered.slice(0, 4);
+            } else {
+                // Match bullet points: "• tip" or "- tip" or "* tip"
+                const bullets = [...text.matchAll(/^\s*[•\-\*]\s*(.+)/gm)]
+                    .map(m => m[1].trim())
+                    .filter(t => t.length > 8);
+                if (bullets.length >= 2) {
+                    tips = bullets.slice(0, 4);
                 } else {
-                    renderTips(predictedPersona.strategies || [], false);
+                    // Fallback: split by newlines, keep non-empty lines
+                    tips = text.split(/\n+/)
+                        .map(l => l.replace(/^\s*\d+[\.\)]\s*/, '').trim())
+                        .filter(l => l.length > 15)
+                        .slice(0, 4);
                 }
-            } catch {
+            }
+
+            console.log('[AI Strategies] Parsed tips:', tips);
+
+            if (tips.length >= 2) {
+                renderTips(tips, true);
+            } else {
                 renderTips(predictedPersona.strategies || [], false);
             }
-        }).catch(() => {
+        }).catch(err => {
+            console.error('[AI Strategies] Error:', err);
             renderTips(predictedPersona.strategies || [], false);
         });
+
     }
 
     // Close add-student modal and show popup
@@ -1276,16 +1318,11 @@ document.addEventListener('DOMContentLoaded', () => {
         showTyping();
 
         try {
-            // First message includes system context; subsequent keep history
             const systemCtx = buildDashboardContext();
-            const prompt = chatHistory.length === 0
-                ? `${systemCtx}\n\nTeacher's question: ${text}`
-                : text;
+            const response = await callGemini(text, systemCtx, chatHistory);
 
-            const response = await callGemini(prompt, chatHistory);
-
-            // Update history for next turn
-            chatHistory.push({ role: 'user', parts: [{ text: chatHistory.length === 0 ? `${systemCtx}\n\nTeacher's question: ${text}` : text }] });
+            // Update history for multi-turn
+            chatHistory.push({ role: 'user', parts: [{ text }] });
             chatHistory.push({ role: 'model', parts: [{ text: response }] });
 
             hideTyping();

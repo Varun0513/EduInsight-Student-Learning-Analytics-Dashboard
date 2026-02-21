@@ -1,34 +1,44 @@
-// ── Gemini 2.0 Flash API Helper ───────────────────────────────────────────────
-const GEMINI_MODEL = 'gemini-2.0-flash';
+// ── Gemini API Helper ─────────────────────────────────────────────────────────
+const GEMINI_MODEL = 'gemini-2.5-flash';
+
+
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 /**
- * Call the Gemini API with a prompt string.
- * @param {string} prompt
- * @param {Array}  history  — optional [{role:'user'|'model', parts:[{text}]}]
+ * Call the Gemini API.
+ * @param {string}   userPrompt   — the user message text
+ * @param {string}   systemCtx    — optional system instruction block
+ * @param {Array}    history      — [{role, parts:[{text}]}] for multi-turn
  * @returns {Promise<string>} response text
  */
-async function callGemini(prompt, history = []) {
+async function callGemini(userPrompt, systemCtx = '', history = []) {
     const key = window.GEMINI_API_KEY;
     if (!key || key === 'YOUR_API_KEY_HERE') {
-        throw new Error('Gemini API key not set. Open config.js and add your key.');
+        throw new Error('No API key — open config.js and add your Gemini key.');
     }
 
-    const contents = [
-        ...history,
-        { role: 'user', parts: [{ text: prompt }] }
-    ];
+    const body = {
+        contents: [
+            ...history,
+            { role: 'user', parts: [{ text: userPrompt }] }
+        ],
+        generationConfig: {
+            temperature: 1,
+            maxOutputTokens: 1024,
+            thinkingConfig: { thinkingBudget: 0 }
+        }
+
+    };
+
+    // Use systemInstruction when provided (cleaner than embedding it in user message)
+    if (systemCtx) {
+        body.systemInstruction = { parts: [{ text: systemCtx }] };
+    }
 
     const res = await fetch(`${GEMINI_ENDPOINT}?key=${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents,
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 512,
-            }
-        })
+        body: JSON.stringify(body)
     });
 
     if (!res.ok) {
@@ -41,30 +51,23 @@ async function callGemini(prompt, history = []) {
 }
 
 /**
- * Build a system context string summarising the current dashboard data.
- * Sent at the start of every chat message so Gemini knows the dataset.
+ * Compact dashboard context for the chat assistant.
  */
 function buildDashboardContext() {
     const k = ANALYTICS.kpis;
-    const clusters = ANALYTICS.clusters;
-    const clusterSummary = clusters.map(c =>
-        `  • ${c.name}: ${c.count.toLocaleString()} students (avg score ${c.avg_score}, avg attend ${c.avg_attend}%, high-risk: ${c.risk_high})`
-    ).join('\n');
+    const cs = ANALYTICS.clusters;
 
-    return `You are an AI assistant embedded in EduInsight, a learning analytics dashboard for school educators.
+    const personaSummary = cs.map(c =>
+        `${c.name}: ${c.count} students, avg score ${c.avg_score}, attendance ${c.avg_attend}%, high-risk ${c.risk_high}`
+    ).join(' | ');
 
-CURRENT DATASET SUMMARY:
-- Total students: ${k.total.toLocaleString()}
-- Average exam score: ${k.avg_score}
-- Average attendance: ${k.avg_attend}%
-- High-risk students: ${k.high_risk.toLocaleString()} (${((k.high_risk / k.total) * 100).toFixed(1)}%)
-- Medium-risk: ${k.medium_risk.toLocaleString()}
-- Low-risk: ${k.low_risk.toLocaleString()}
-- Average study hours: ${k.avg_hours}h/week
-- Largest persona group: ${k.top_cluster} (${k.top_cluster_pct}%)
-
-LEARNER PERSONAS:
-${clusterSummary}
-
-Answer questions using this data where relevant. Be concise, practical, and supportive in tone. If you don't have specific data requested, say so honestly.`;
+    return `You are EduInsight AI, a teaching assistant for school educators.
+Dataset: ${k.total} students | avg score ${k.avg_score} | avg attendance ${k.avg_attend}% | high-risk ${k.high_risk} | medium-risk ${k.medium_risk} | low-risk ${k.low_risk} | avg study hours ${k.avg_hours}h/wk
+Personas: ${personaSummary}
+Be concise, practical, and supportive. Answer only from the data above when relevant.`;
 }
+
+
+
+
+
