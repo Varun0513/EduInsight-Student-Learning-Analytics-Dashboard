@@ -358,7 +358,7 @@ function renderRiskTable() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const gridOpts = {
-    color: 'rgba(255,255,255,0.05)',
+    color: 'rgba(0,0,0,0.05)',
     drawBorder: false,
 };
 
@@ -1239,6 +1239,265 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE — PDF REPORT EXPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+document.getElementById('btn-export-pdf').addEventListener('click', generatePDF);
+
+function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    if (!jsPDF) { alert('PDF library not loaded. Please check your internet connection.'); return; }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();   // 210mm
+    const pageH = doc.internal.pageSize.getHeight(); // 297mm
+    const margin = 14;
+    const col2 = W / 2 + 3;
+    let y = 0;
+
+    // ── Colours ──────────────────────────────────────────────────────────────
+    const C = {
+        bg: [10, 15, 31],
+        card: [18, 26, 52],
+        accent: [124, 58, 237],
+        blue: [14, 165, 233],
+        high: [239, 68, 68],
+        medium: [245, 158, 11],
+        low: [34, 197, 94],
+        white: [255, 255, 255],
+        muted: [148, 163, 184],
+        border: [30, 41, 59],
+    };
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    const fillRect = (x, yy, w, h, rgb) => {
+        doc.setFillColor(...rgb);
+        doc.rect(x, yy, w, h, 'F');
+    };
+    const setFont = (size, style = 'normal', rgb = C.white) => {
+        doc.setFontSize(size);
+        doc.setFont('helvetica', style);
+        doc.setTextColor(...rgb);
+    };
+    const text = (str, x, yy, opts = {}) => doc.text(String(str), x, yy, opts);
+    const newPage = () => {
+        doc.addPage();
+        // dark background on every page
+        fillRect(0, 0, W, pageH, C.bg);
+        y = margin;
+    };
+
+    // ════════════════════════════════════════════════
+    // PAGE 1
+    // ════════════════════════════════════════════════
+    fillRect(0, 0, W, pageH, C.bg);
+    y = 0;
+
+    // ── Header band ─────────────────────────────────
+    fillRect(0, 0, W, 26, C.card);
+    doc.setDrawColor(...C.accent);
+    doc.setLineWidth(0.8);
+    doc.line(0, 26, W, 26);
+
+    setFont(16, 'bold', C.white);
+    text('EduInsight', margin, 11);
+
+    setFont(8, 'normal', C.muted);
+    text('Student Learning Analytics Dashboard', margin, 17);
+
+    // Date + filter info right-aligned
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    setFont(7, 'normal', C.muted);
+    text('Generated: ' + dateStr, W - margin, 11, { align: 'right' });
+
+    const school = document.getElementById('filter-school')?.value || 'All';
+    const gender = document.getElementById('filter-gender')?.value || 'All';
+    const motiv = document.getElementById('filter-motiv')?.value || 'All';
+    text(`Filters: School=${school}  Gender=${gender}  Motivation=${motiv}`, W - margin, 17, { align: 'right' });
+
+    y = 34;
+
+    // ── KPI Strip ───────────────────────────────────
+    const k = ANALYTICS.kpis;
+    const kpis = [
+        { label: 'Total Students', value: k.total.toLocaleString(), color: C.blue },
+        { label: 'Avg Exam Score', value: k.avg_score, color: C.accent },
+        { label: 'Avg Attendance', value: k.avg_attend + '%', color: C.low },
+        { label: 'High-Risk Students', value: k.high_risk.toLocaleString(), color: C.high },
+        { label: 'Avg Study Hours', value: k.avg_hours + 'h/wk', color: C.medium },
+    ];
+    const kw = (W - margin * 2) / kpis.length - 1.5;
+    kpis.forEach((kpi, i) => {
+        const kx = margin + i * (kw + 1.5);
+        fillRect(kx, y, kw, 20, C.card);
+        doc.setDrawColor(...kpi.color);
+        doc.setLineWidth(0.5);
+        doc.line(kx, y, kx + kw, y);  // top accent
+        setFont(11, 'bold', kpi.color);
+        text(kpi.value, kx + kw / 2, y + 10, { align: 'center' });
+        setFont(5.5, 'normal', C.muted);
+        text(kpi.label.toUpperCase(), kx + kw / 2, y + 16, { align: 'center' });
+    });
+    y += 26;
+
+    // ── Section: Risk Distribution ───────────────────
+    setFont(9, 'bold', C.white);
+    text('RISK DISTRIBUTION', margin, y);
+    y += 5;
+
+    const total = k.total || 1;
+    const risks = [
+        { label: 'High Risk', count: k.high_risk, pct: ((k.high_risk / total) * 100).toFixed(1), rgb: C.high },
+        { label: 'Medium Risk', count: k.medium_risk, pct: ((k.medium_risk / total) * 100).toFixed(1), rgb: C.medium },
+        { label: 'Low Risk', count: k.low_risk, pct: ((k.low_risk / total) * 100).toFixed(1), rgb: C.low },
+    ];
+    const barW = W - margin * 2;
+    const barH = 7;
+    // coloured bar
+    let bx = margin;
+    risks.forEach(r => {
+        const segW = barW * (r.count / total);
+        fillRect(bx, y, segW, barH, r.rgb);
+        bx += segW;
+    });
+    y += barH + 4;
+
+    // legend row
+    risks.forEach((r, i) => {
+        const lx = margin + i * 60;
+        fillRect(lx, y, 4, 4, r.rgb);
+        setFont(7, 'normal', C.white);
+        text(`${r.label}: ${r.count.toLocaleString()} (${r.pct}%)`, lx + 6, y + 3.5);
+    });
+    y += 12;
+
+    // ── Section: Learner Personas ────────────────────
+    setFont(9, 'bold', C.white);
+    text('LEARNER PERSONAS', margin, y);
+    y += 4;
+
+    const clusters = ANALYTICS.clusters;
+    const colW = (W - margin * 2) / 2 - 2;
+    clusters.forEach((c, i) => {
+        const cx = margin + (i % 2) * (colW + 4);
+        const cy = y + Math.floor(i / 2) * 28;
+        fillRect(cx, cy, colW, 24, C.card);
+        // left accent line
+        doc.setFillColor(...C.accent);
+        doc.rect(cx, cy, 1.5, 24, 'F');
+
+        setFont(8, 'bold', C.white);
+        text(c.name, cx + 5, cy + 7);
+
+        const stats = [
+            ['Students', c.count.toLocaleString()],
+            ['Avg Score', c.avg_score],
+            ['Avg Attend', c.avg_attend + '%'],
+            ['High-Risk', c.risk_high],
+        ];
+        stats.forEach(([lbl, val], si) => {
+            const sx = cx + 5 + si * (colW / 4 - 0.5);
+            setFont(6, 'normal', C.muted);
+            text(lbl.toUpperCase(), sx, cy + 14);
+            setFont(7, 'bold', C.blue);
+            text(String(val), sx, cy + 20);
+        });
+    });
+
+    const personaRows = Math.ceil(clusters.length / 2);
+    y += personaRows * 28 + 4;
+
+    // ── Footer line ──────────────────────────────────
+    doc.setDrawColor(...C.border);
+    doc.setLineWidth(0.3);
+    doc.line(margin, pageH - 8, W - margin, pageH - 8);
+    setFont(6, 'normal', C.muted);
+    text('Page 1 of 2  ·  EduInsight — Confidential', W / 2, pageH - 4, { align: 'center' });
+
+    // ════════════════════════════════════════════════
+    // PAGE 2 — High-Risk Student Table
+    // ════════════════════════════════════════════════
+    newPage();
+
+    setFont(11, 'bold', C.white);
+    text('HIGH-RISK STUDENTS', margin, y);
+    setFont(7, 'normal', C.muted);
+    text('Top students ranked by disengagement risk score', margin, y + 5);
+    y += 12;
+
+    // Table header
+    const cols = [
+        { key: 'n', label: '#', w: 8 },
+        { key: 'score', label: 'EXAM SCORE', w: 25 },
+        { key: 'attend', label: 'ATTENDANCE', w: 25 },
+        { key: 'hours', label: 'STUDY HRS', w: 22 },
+        { key: 'motiv', label: 'MOTIVATION', w: 25 },
+        { key: 'persona', label: 'PERSONA', w: 50 },
+        { key: 'risk', label: 'RISK SCORE', w: 25 },
+    ];
+
+    // header row
+    fillRect(margin, y, W - margin * 2, 7, C.accent);
+    let hx = margin;
+    cols.forEach(col => {
+        setFont(6, 'bold', C.white);
+        text(col.label, hx + 2, y + 4.5);
+        hx += col.w;
+    });
+    y += 7;
+
+    // get high-risk students, sorted by risk desc
+    const highRisk = filteredStudents
+        .filter(s => computeRisk(s).risk_score >= 5)
+        .sort((a, b) => computeRisk(b).risk_score - computeRisk(a).risk_score)
+        .slice(0, 30);
+
+    highRisk.forEach((s, idx) => {
+        if (y > pageH - 18) { newPage(); y = margin; }
+        const rowH = 6.5;
+        const rowBg = idx % 2 === 0 ? C.card : C.bg;
+        fillRect(margin, y, W - margin * 2, rowH, rowBg);
+
+        const risk = computeRisk(s);
+        const rColor = risk.risk_score >= 7 ? C.high : risk.risk_score >= 5 ? C.medium : C.low;
+        let rx = margin;
+
+        const rowData = [
+            idx + 1,
+            s.Exam_Score + '/100',
+            s.Attendance + '%',
+            s.Hours_Studied + 'h',
+            s.Motivation_Level,
+            risk.persona.name,
+            risk.risk_score + '/10',
+        ];
+        rowData.forEach((val, ci) => {
+            const col = cols[ci];
+            const textColor = ci === 6 ? rColor : C.white;
+            setFont(6, ci === 6 ? 'bold' : 'normal', textColor);
+            text(String(val), rx + 2, y + 4.3);
+            rx += col.w;
+        });
+        y += rowH;
+    });
+
+    if (highRisk.length === 0) {
+        setFont(8, 'normal', C.low);
+        text('✓ No high-risk students found with current filters.', margin, y + 8);
+    }
+
+    // Footer
+    doc.setDrawColor(...C.border);
+    doc.setLineWidth(0.3);
+    doc.line(margin, pageH - 8, W - margin, pageH - 8);
+    setFont(6, 'normal', C.muted);
+    text('Page 2 of 2  ·  EduInsight — Confidential', W / 2, pageH - 4, { align: 'center' });
+
+    // ── Save ────────────────────────────────────────
+    const filename = `EduInsight_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(filename);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FEATURE 3 — AI CHAT ASSISTANT
 // ═══════════════════════════════════════════════════════════════════════════════
 (function initChatAssistant() {
@@ -1353,3 +1612,101 @@ document.addEventListener('DOMContentLoaded', () => {
         input.style.height = Math.min(input.scrollHeight, 120) + 'px';
     });
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THEME TOGGLE (Night / Day Shift)
+// ═══════════════════════════════════════════════════════════════════════════════
+(function initThemeToggle() {
+    const toggleBtn = document.getElementById('theme-toggle');
+    const icon = document.getElementById('theme-icon');
+    const text = document.getElementById('theme-text');
+
+    // Check local storage
+    const currentTheme = localStorage.getItem('eduinsight-theme') || 'light';
+    if (currentTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+        icon.textContent = '☀️';
+        text.textContent = 'DAY SHIFT';
+        Chart.defaults.color = '#e0e7ff';
+        gridOpts.color = 'rgba(255,255,255,0.15)';
+    } else {
+        gridOpts.color = 'rgba(0,0,0,0.05)';
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+
+        if (isDark) {
+            icon.textContent = '☀️';
+            text.textContent = 'DAY SHIFT';
+            localStorage.setItem('eduinsight-theme', 'dark');
+            Chart.defaults.color = '#e0e7ff';
+            gridOpts.color = 'rgba(255,255,255,0.15)';
+        } else {
+            icon.textContent = '🌙';
+            text.textContent = 'NIGHT SHIFT';
+            localStorage.setItem('eduinsight-theme', 'light');
+            Chart.defaults.color = '#94A3B8';
+            gridOpts.color = 'rgba(0,0,0,0.05)';
+        }
+
+        // Re-render charts
+        renderAll();
+    });
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOP FOLDER TABS NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════════════
+(function initTabNavigation() {
+    const tabs = document.querySelectorAll('.folder-tab');
+    const sections = {
+        'tab-dashboard': document.body,
+        'tab-analytics': document.getElementById('analytics-section'),
+        'tab-snapshots': document.getElementById('snapshots-section')
+    };
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Update active state
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Scroll to section
+            const target = sections[tab.id];
+            if (target) {
+                if (target === document.body) {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    // Offset slightly for header
+                    const y = target.getBoundingClientRect().top + window.scrollY - 100;
+                    window.scrollTo({ top: y, behavior: 'smooth' });
+                }
+            }
+        });
+    });
+
+    // Highlight active tab on scroll
+    window.addEventListener('scroll', () => {
+        const scrollPos = window.scrollY + 150;
+
+        let activeId = 'tab-dashboard';
+        ['analytics-section', 'snapshots-section'].forEach(secId => {
+            const el = document.getElementById(secId);
+            if (el && el.offsetTop <= scrollPos) {
+                activeId = 'tab-' + secId.split('-')[0];
+            }
+        });
+
+        tabs.forEach(t => t.classList.toggle('active', t.id === activeId));
+    });
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPORT PDF
+// ═══════════════════════════════════════════════════════════════════════════════
+document.getElementById('btn-export-pdf').addEventListener('click', () => {
+    // Basic print dialog for saving the page structure as PDF
+    window.print();
+});
