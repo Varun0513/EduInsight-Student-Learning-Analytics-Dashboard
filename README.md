@@ -2,7 +2,7 @@
 
 > **Praxis 2.0 Hackathon Submission** | Theme: Education · Behavioral Analytics · Personalization
 
-[![Live Demo](https://img.shields.io/badge/Demo-Live%20Dashboard-7C3AED?style=for-the-badge)](#)
+[![Live Demo](https://img.shields.io/badge/Demo-Live%20Dashboard-7C3AED?style=for-the-badge)](https://edu-insight-student-learning-analyt.vercel.app/)
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python)](https://python.org)
 [![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=for-the-badge&logo=javascript)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
 
