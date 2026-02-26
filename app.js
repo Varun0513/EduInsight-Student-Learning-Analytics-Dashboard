@@ -332,6 +332,11 @@ function renderRiskTable() {
         return `<tr>
       <td style="color:var(--text-muted)">${displayIndex}</td>
       <td>
+        <button class="btn-pdf-export" data-index="${displayIndex - 1}" title="Download Student Report" style="padding: 2px 6px; font-size: 0.8rem; background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer;">
+          📄 PDF
+        </button>
+      </td>
+      <td>
         <span style="margin-right:4px">${p.icon}</span>
         <span style="color:${p.color};font-weight:600;font-size:0.73rem">${p.name}</span>
       </td>
@@ -351,6 +356,134 @@ function renderRiskTable() {
       <td><span class="risk-pill ${r.risk}">${r.risk}</span></td>
     </tr>`;
     }).join('');
+}
+
+// Event Delegation for PDF Buttons
+document.getElementById('risk-tbody').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-pdf-export');
+    if (!btn) return;
+    const rowIndex = parseInt(btn.dataset.index);
+    let rows = filteredRisk();
+
+    // We must rebuild the exact sorted rows to get the correct student
+    rows.sort((a, b) => {
+        let valA = a[riskSortCol];
+        let valB = b[riskSortCol];
+
+        if (riskSortCol === 'persona') {
+            const rank = {
+                'Driven Achiever': 0, 'Consistent Worker': 1, 'Potential Bloomer': 2,
+                'Passive Coaster': 3, 'Struggling Learner': 4
+            };
+            valA = rank[ANALYTICS.clusters[resolvePersona(a, a.persona)]?.name] ?? 5;
+            valB = rank[ANALYTICS.clusters[resolvePersona(b, b.persona)]?.name] ?? 5;
+        } else if (riskSortCol === 'risk') {
+            const m = { 'Low Risk': 0, 'Medium Risk': 1, 'High Risk': 2 };
+            valA = m[a.risk] || 0; valB = m[b.risk] || 0;
+        } else if (riskSortCol === 'internet') {
+            valA = a.internet === 'Yes' ? 1 : 0; valB = b.internet === 'Yes' ? 1 : 0;
+        } else if (riskSortCol === 'motiv') {
+            const m = { 'Low': 0, 'Medium': 1, 'High': 2 };
+            valA = m[a.motiv] || 0; valB = m[b.motiv] || 0;
+        }
+
+        if (typeof valA === 'string' && typeof valB === 'string') {
+            return riskSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        if (valA < valB) return riskSortAsc ? -1 : 1;
+        if (valA > valB) return riskSortAsc ? 1 : -1;
+        return 0;
+    });
+
+    const student = rows[rowIndex];
+    if (student) {
+        generateStudentPDF(student);
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REPORT GENERATION (jsPDF)
+// ═══════════════════════════════════════════════════════════════════════════════
+function generateStudentPDF(student) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    const resolvedId = resolvePersona(student, student.persona);
+    const p = ANALYTICS.clusters[resolvedId];
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("EduInsight Student Report", 14, 20);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 28);
+
+    // Main stats
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "bold");
+    doc.text("Academic Profile", 14, 40);
+
+    doc.autoTable({
+        startY: 45,
+        theme: 'grid',
+        headStyles: { fillColor: [14, 165, 233] },
+        head: [['Metric', 'Value']],
+        body: [
+            ['School', student.school],
+            ['Gender', student.gender],
+            ['Exam Score', student.score + ' / 100'],
+            ['Attendance', student.attend + '%'],
+            ['Study Hours', student.hours + ' hrs/wk'],
+            ['Motivation', student.motiv],
+            ['Internet Access', student.internet]
+        ],
+    });
+
+    // Risk & Persona
+    const finalY = doc.lastAutoTable.finalY || 100;
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Risk & Persona Analysis", 14, finalY + 15);
+
+    doc.autoTable({
+        startY: finalY + 20,
+        theme: 'grid',
+        headStyles: { fillColor: [124, 58, 237] },
+        head: [['Analysis Area', 'Result']],
+        body: [
+            ['Risk Score', student.risk_score],
+            ['Risk Level', student.risk],
+            ['Persona Cluster', p.name],
+            ['Persona Description', p.description]
+        ],
+    });
+
+    // Strategies
+    const stratY = doc.lastAutoTable.finalY || 160;
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Recommended Interventions", 14, stratY + 15);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+
+    let yPos = stratY + 25;
+    p.strategies.forEach((strat, idx) => {
+        const textLines = doc.splitTextToSize(`${idx + 1}. ${strat}`, 180);
+        doc.text(textLines, 14, yPos);
+        yPos += textLines.length * 6 + 2;
+    });
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text("CONFIDENTIAL // EDUINSIGHT", 14, 285);
+
+    doc.save(`Student_Report_${student.score}_${student.risk.replace(' ', '_')}.pdf`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1707,6 +1840,26 @@ function generatePDF() {
 // EXPORT PDF
 // ═══════════════════════════════════════════════════════════════════════════════
 document.getElementById('btn-export-pdf').addEventListener('click', () => {
-    // Basic print dialog for saving the page structure as PDF
-    window.print();
+    // Scroll to the risk table so they can export a specific student
+    const target = document.getElementById('risk-table');
+    if (target) {
+        const y = target.getBoundingClientRect().top + window.scrollY - 100;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+
+        // Small tooltip/alert overlay logic
+        const existing = document.getElementById('export-hint');
+        if (existing) existing.remove();
+
+        const hint = document.createElement('div');
+        hint.id = 'export-hint';
+        hint.innerHTML = 'Click the <strong>📄 PDF</strong> button next to a student to download their individual report.';
+        hint.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); background:var(--bg-surface); color:var(--text-primary); border:2px solid var(--border); padding:1rem 2rem; border-radius:8px; z-index:9999; box-shadow:var(--shadow-glow); font-family:var(--font-body); opacity:0; transition:opacity 0.3s; pointer-events:none; filter:url(#squiggly-2);';
+        document.body.appendChild(hint);
+
+        setTimeout(() => hint.style.opacity = '1', 10);
+        setTimeout(() => {
+            hint.style.opacity = '0';
+            setTimeout(() => hint.remove(), 300);
+        }, 4000);
+    }
 });
