@@ -13,9 +13,6 @@ const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models
  */
 async function callGemini(userPrompt, systemCtx = '', history = []) {
     const key = window.GEMINI_API_KEY;
-    if (!key || key === 'YOUR_API_KEY_HERE') {
-        throw new Error('No API key — open config.js and add your Gemini key.');
-    }
 
     const body = {
         contents: [
@@ -27,7 +24,6 @@ async function callGemini(userPrompt, systemCtx = '', history = []) {
             maxOutputTokens: 1024,
             thinkingConfig: { thinkingBudget: 0 }
         }
-
     };
 
     // Use systemInstruction when provided (cleaner than embedding it in user message)
@@ -35,15 +31,31 @@ async function callGemini(userPrompt, systemCtx = '', history = []) {
         body.systemInstruction = { parts: [{ text: systemCtx }] };
     }
 
-    const res = await fetch(`${GEMINI_ENDPOINT}?key=${key}`, {
+    let url;
+    if (key && key !== 'YOUR_API_KEY_HERE') {
+        url = `${GEMINI_ENDPOINT}?key=${key}`;
+    } else {
+        url = '/api/gemini';
+    }
+
+    const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
 
     if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error?.message || `Gemini API error ${res.status}`);
+        let errMsg = `Gemini API error ${res.status}`;
+        try {
+            const err = await res.json();
+            errMsg = err?.error?.message || errMsg;
+        } catch (e) { }
+
+        if (url === '/api/gemini' && res.status === 404) {
+            throw new Error('On Vercel, ensure GEMINI_API_KEY is in Environment Variables. Locally, add it to config.js.');
+        }
+
+        throw new Error(errMsg);
     }
 
     const data = await res.json();
