@@ -1694,12 +1694,7 @@ function generatePDF() {
         const text = input.value.trim();
         if (!text || isTyping) return;
 
-        // Check API key
-        const hasKey = window.GEMINI_API_KEY && window.GEMINI_API_KEY !== 'YOUR_API_KEY_HERE';
-        if (!hasKey) {
-            appendBubble('ai', '⚠️ Please add your Gemini API key to <code>config.js</code> to use the AI Assistant.');
-            return;
-        }
+        // Check API key (handled by gemini.js fallback to Vercel API now)
 
         isTyping = true;
         input.value = '';
